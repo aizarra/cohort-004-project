@@ -6,7 +6,7 @@ import { CourseStatus } from "~/db/schema";
 import { Card, CardContent, CardFooter, CardHeader } from "~/components/ui/card";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
-import { AlertTriangle, BookOpen, Search } from "lucide-react";
+import { AlertTriangle, BookOpen, Search, Star } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
 import { UserAvatar } from "~/components/user-avatar";
 import { getCurrentUserId } from "~/lib/session";
@@ -235,18 +235,31 @@ export default function CourseCatalog({ loaderData }: Route.ComponentProps) {
                     />
                     {course.instructorName}
                   </span>
-                  <span className="font-semibold text-foreground">
-                    {course.pppPrice < course.price ? (
-                      <span className="flex items-center gap-1.5">
-                        <span className="text-xs line-through text-muted-foreground font-normal">
-                          {formatPrice(course.price)}
+                  <div className="flex items-center gap-2">
+                    {course.avgRating !== null && course.reviewCount > 0 && (
+                      <span className="flex items-center gap-0.5 text-amber-500">
+                        <Star className="size-3 fill-amber-500" />
+                        <span className="font-medium text-foreground">
+                          {course.avgRating}
                         </span>
-                        {formatPrice(course.pppPrice)}
+                        <span className="text-muted-foreground">
+                          ({course.reviewCount})
+                        </span>
                       </span>
-                    ) : (
-                      formatPrice(course.price)
                     )}
-                  </span>
+                    <span className="font-semibold text-foreground">
+                      {course.pppPrice < course.price ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-xs line-through text-muted-foreground font-normal">
+                            {formatPrice(course.price)}
+                          </span>
+                          {formatPrice(course.pppPrice)}
+                        </span>
+                      ) : (
+                        formatPrice(course.price)
+                      )}
+                    </span>
+                  </div>
                 </CardFooter>
               </Card>
             </Link>

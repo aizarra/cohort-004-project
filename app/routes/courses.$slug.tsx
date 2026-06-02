@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useFetcher, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/courses.$slug";
 import {
@@ -33,6 +33,7 @@ import {
   Clock,
   Pencil,
   PlayCircle,
+  Star,
   Users,
 } from "lucide-react";
 import { CourseImage } from "~/components/course-image";
@@ -42,6 +43,10 @@ import { formatDuration, formatPrice } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { resolveCountry } from "~/lib/country.server";
 import { calculatePppPrice, getCountryTierInfo } from "~/lib/ppp";
+import {
+  getCourseAverageRating,
+  getUserCourseRating,
+} from "~/services/reviewService";
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
   const title = loaderData?.course?.title ?? "Course";
@@ -102,6 +107,12 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     : courseWithDetails.price;
   const tierInfo = getCountryTierInfo(country);
 
+  const ratingStats = getCourseAverageRating(course.id);
+  const userRating =
+    currentUserId && enrolled
+      ? (getUserCourseRating(currentUserId, course.id)?.rating ?? null)
+      : null;
+
   return {
     course: courseWithDetails,
     salesCopyHtml,
@@ -113,6 +124,9 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     currentUserId,
     pppPrice,
     tierInfo,
+    avgRating: ratingStats?.avgRating ?? null,
+    reviewCount: ratingStats?.count ?? 0,
+    userRating,
   };
 }
 
@@ -181,6 +195,9 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     currentUserId,
     pppPrice,
     tierInfo,
+    avgRating,
+    reviewCount,
+    userRating,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -301,7 +318,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
         <p className="mb-4 text-lg text-muted-foreground">
           {course.description}
         </p>
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <UserAvatar
               name={course.instructorName}
@@ -318,6 +335,15 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
             <span className="flex items-center gap-1">
               <Clock className="size-4" />
               {formatDuration(totalDuration, true, false, false)} total
+            </span>
+          )}
+          {avgRating !== null && reviewCount > 0 && (
+            <span className="flex items-center gap-1 text-amber-500">
+              <Star className="size-4 fill-amber-500" />
+              <span className="font-semibold text-foreground">{avgRating}</span>
+              <span className="text-muted-foreground">
+                ({reviewCount} {reviewCount === 1 ? "rating" : "ratings"})
+              </span>
             </span>
           )}
         </div>
@@ -413,6 +439,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
                       Buy More Seats
                     </Button>
                   </Link>
+                  <StarRating courseId={course.id} userRating={userRating} />
                 </>
               ) : (
                 enrollButton
@@ -584,6 +611,57 @@ function CourseContent({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function StarRating({
+  courseId,
+  userRating,
+}: {
+  courseId: number;
+  userRating: number | null;
+}) {
+  const fetcher = useFetcher();
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  const submittedRating =
+    fetcher.formData ? Number(fetcher.formData.get("rating")) : null;
+  const displayRating = submittedRating ?? userRating;
+
+  function submit(rating: number) {
+    fetcher.submit(
+      { courseId: String(courseId), rating: String(rating) },
+      { method: "POST", action: "/api/course-rating" }
+    );
+  }
+
+  return (
+    <div className="pt-2">
+      <p className="mb-1.5 text-xs text-muted-foreground">
+        {displayRating ? "Your rating" : "Rate this course"}
+      </p>
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((star) => {
+          const filled = hovered !== null ? star <= hovered : star <= (displayRating ?? 0);
+          return (
+            <button
+              key={star}
+              type="button"
+              onClick={() => submit(star)}
+              onMouseEnter={() => setHovered(star)}
+              onMouseLeave={() => setHovered(null)}
+              className="text-amber-400 transition-transform hover:scale-110 focus-visible:outline-none"
+              aria-label={`Rate ${star} star${star > 1 ? "s" : ""}`}
+            >
+              <Star
+                className="size-6"
+                fill={filled ? "currentColor" : "none"}
+              />
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

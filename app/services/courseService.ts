@@ -88,6 +88,8 @@ export function buildCourseQuery(
       instructorName: users.name,
       instructorAvatarUrl: users.avatarUrl,
       categoryName: categories.name,
+      avgRating: sql<number | null>`(SELECT ROUND(AVG(rating), 1) FROM course_reviews WHERE course_id = ${courses.id})`,
+      reviewCount: sql<number>`(SELECT COUNT(*) FROM course_reviews WHERE course_id = ${courses.id})`,
     })
     .from(courses)
     .innerJoin(users, eq(courses.instructorId, users.id))
