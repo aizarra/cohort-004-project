@@ -13,6 +13,44 @@ async function getHighlighter(): Promise<Highlighter> {
   return highlighter;
 }
 
+export async function renderCommentBody(markdown: string): Promise<string> {
+  const hl = await getHighlighter();
+
+  const escape = (s: string) =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  const renderer = new Renderer();
+
+  renderer.code = ({ text, lang }) => {
+    const language = lang || "text";
+    try {
+      return hl.codeToHtml(text, { lang: language, theme: "github-dark" });
+    } catch {
+      return `<pre><code>${escape(text)}</code></pre>`;
+    }
+  };
+
+  renderer.codespan = ({ text }) => `<code>${escape(text)}</code>`;
+
+  // Strip raw HTML entirely — never trust user-supplied HTML
+  renderer.html = () => "";
+
+  // Links: render only the visible text, no anchor tag
+  renderer.link = ({ text }) => text;
+
+  // Images: strip entirely
+  renderer.image = () => "";
+
+  // Headings: flatten to paragraph
+  renderer.heading = ({ text }) => `<p>${text}</p>\n`;
+
+  return marked.parse(markdown, { renderer }) as string;
+}
+
 export async function renderMarkdown(markdown: string): Promise<string> {
   const hl = await getHighlighter();
 

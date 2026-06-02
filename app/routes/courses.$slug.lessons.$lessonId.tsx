@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useFetcher, useNavigate } from "react-router";
 import { toast } from "sonner";
 import type { Route } from "./+types/courses.$slug.lessons.$lessonId";
@@ -40,8 +40,11 @@ import {
   Github,
   HelpCircle,
   MapPin,
+  MessageSquare,
   PlayCircle,
+  Reply,
   ShieldAlert,
+  Trash2,
   XCircle,
   Trophy,
   RotateCcw,
@@ -55,6 +58,7 @@ import { resolveCountry } from "~/lib/country.server";
 import { checkPppAccess, COUNTRIES } from "~/lib/ppp";
 import { findPurchase } from "~/services/purchaseService";
 import { parseFormData, parseParams } from "~/lib/validation";
+import { getCommentCount } from "~/services/commentService";
 
 const lessonParamsSchema = z.object({
   slug: z.string().min(1),
@@ -248,6 +252,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     }
   }
 
+  const commentCount = getCommentCount(lessonId);
+
   return {
     course: {
       id: courseWithDetails.id,
@@ -281,6 +287,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     pppBlocked,
     pppBlockedCountry,
     pppPurchaseCountry,
+    commentCount,
   };
 }
 
@@ -382,6 +389,7 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
     pppBlocked,
     pppBlockedCountry,
     pppPurchaseCountry,
+    commentCount,
   } = loaderData;
   const [autoplay, toggleAutoplay] = useAutoplay();
   const fetcher = useFetcher({ key: `mark-complete-${lesson.id}` });
@@ -543,6 +551,15 @@ export default function LessonViewer({ loaderData }: Route.ComponentProps) {
               quizResult={quizResult}
               quizFetcher={quizFetcher}
               isSubmitting={isSubmittingQuiz}
+            />
+          )}
+
+          {/* Comments Section */}
+          {enrolled && currentUserId && (
+            <LessonComments
+              lessonId={lesson.id}
+              currentUserId={currentUserId}
+              initialCount={commentCount}
             />
           )}
 
@@ -1011,6 +1028,454 @@ function QuizSection({
         </quizFetcher.Form>
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type MutateFetcher = ReturnType<typeof useFetcher<{ success: boolean }>>;
+
+type CommentData = {
+  id: number;
+  userId: number;
+  parentId: number | null;
+  body: string;
+  bodyHtml: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  authorName: string;
+  authorAvatarUrl: string | null;
+  replies: Omit<CommentData, "replies">[];
+};
+
+type CommentsResponse = {
+  comments: CommentData[];
+  hasMore: boolean;
+  total: number;
+  offset: number;
+};
+
+// ─── LessonComments ──────────────────────────────────────────────────────────
+
+function LessonComments({
+  lessonId,
+  currentUserId,
+  initialCount,
+}: {
+  lessonId: number;
+  currentUserId: number;
+  initialCount: number;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [allComments, setAllComments] = useState<CommentData[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(initialCount);
+  const [nextOffset, setNextOffset] = useState(0);
+  const [replyingTo, setReplyingTo] = useState<number | null>(null);
+
+  const loaderFetcher = useFetcher<CommentsResponse>({
+    key: `comments-load-${lessonId}`,
+  });
+  const mutateFetcher = useFetcher<{ success: boolean }>({
+    key: `comments-mutate-${lessonId}`,
+  });
+
+  function loadComments(offset: number) {
+    loaderFetcher.load(
+      `/api/lesson-comments?lessonId=${lessonId}&offset=${offset}`
+    );
+  }
+
+  function refetch() {
+    setNextOffset(0);
+    loadComments(0);
+  }
+
+  function open() {
+    setIsOpen(true);
+    if (allComments.length === 0 && loaderFetcher.state === "idle") {
+      loadComments(0);
+    }
+  }
+
+  // Accumulate comments as pages load
+  const prevLoaderState = useRef(loaderFetcher.state);
+  useEffect(() => {
+    if (
+      prevLoaderState.current !== "idle" &&
+      loaderFetcher.state === "idle" &&
+      loaderFetcher.data
+    ) {
+      const { comments, hasMore: more, total: t, offset } = loaderFetcher.data;
+      if (offset === 0) {
+        setAllComments(comments);
+      } else {
+        setAllComments((prev) => [...prev, ...comments]);
+      }
+      setHasMore(more);
+      setTotal(t);
+      setNextOffset(offset + comments.length);
+    }
+    prevLoaderState.current = loaderFetcher.state;
+  }, [loaderFetcher.state, loaderFetcher.data]);
+
+  // Re-fetch after successful mutation
+  const prevMutateState = useRef(mutateFetcher.state);
+  useEffect(() => {
+    if (
+      prevMutateState.current !== "idle" &&
+      mutateFetcher.state === "idle" &&
+      mutateFetcher.data?.success
+    ) {
+      refetch();
+      setReplyingTo(null);
+    }
+    prevMutateState.current = mutateFetcher.state;
+  }, [mutateFetcher.state, mutateFetcher.data]);
+
+  const isLoading = loaderFetcher.state !== "idle";
+  const isMutating = mutateFetcher.state !== "idle";
+
+  // Optimistic new top-level comment
+  const optimisticBody =
+    isMutating &&
+    mutateFetcher.formData?.get("intent") === "create" &&
+    !mutateFetcher.formData?.get("parentId")
+      ? String(mutateFetcher.formData.get("body"))
+      : null;
+
+  return (
+    <div className="mb-8">
+      <button
+        type="button"
+        onClick={() => (isOpen ? setIsOpen(false) : open())}
+        className="flex w-full items-center gap-2 rounded-lg border bg-muted/30 px-4 py-3 text-left text-sm font-medium hover:bg-muted/60 transition-colors"
+      >
+        <MessageSquare className="size-4 shrink-0" />
+        <span className="flex-1">Comments ({total})</span>
+        <ChevronDown
+          className={cn("size-4 transition-transform", !isOpen && "-rotate-90")}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="mt-3 space-y-4">
+          {isLoading && allComments.length === 0 && (
+            <div className="space-y-3">
+              {[1, 2].map((i) => (
+                <div key={i} className="flex gap-3">
+                  <div className="size-8 rounded-full bg-muted animate-pulse shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-24 rounded bg-muted animate-pulse" />
+                    <div className="h-4 w-3/4 rounded bg-muted animate-pulse" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {allComments.map((comment) => (
+            <CommentThread
+              key={comment.id}
+              comment={comment}
+              currentUserId={currentUserId}
+              lessonId={lessonId}
+              mutateFetcher={mutateFetcher}
+              replyingTo={replyingTo}
+              onReply={setReplyingTo}
+            />
+          ))}
+
+          {optimisticBody && (
+            <div className="flex gap-3 opacity-60">
+              <div className="size-8 rounded-full bg-muted shrink-0" />
+              <div className="flex-1 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                {optimisticBody}
+              </div>
+            </div>
+          )}
+
+          {hasMore && (
+            <button
+              type="button"
+              onClick={() => loadComments(nextOffset)}
+              disabled={isLoading}
+              className="text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+            >
+              {isLoading ? "Loading..." : "Load more comments"}
+            </button>
+          )}
+
+          <CommentForm
+            lessonId={lessonId}
+            parentId={null}
+            fetcher={mutateFetcher}
+            disabled={isMutating}
+            placeholder="Write a comment…"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CommentThread ────────────────────────────────────────────────────────────
+
+function CommentThread({
+  comment,
+  currentUserId,
+  lessonId,
+  mutateFetcher,
+  replyingTo,
+  onReply,
+}: {
+  comment: CommentData;
+  currentUserId: number;
+  lessonId: number;
+  mutateFetcher: MutateFetcher;
+  replyingTo: number | null;
+  onReply: (id: number | null) => void;
+}) {
+  const isMutating = mutateFetcher.state !== "idle";
+
+  const optimisticReplyBody =
+    isMutating &&
+    mutateFetcher.formData?.get("intent") === "create" &&
+    String(mutateFetcher.formData?.get("parentId")) === String(comment.id)
+      ? String(mutateFetcher.formData.get("body"))
+      : null;
+
+  return (
+    <div>
+      <CommentItem
+        comment={comment}
+        currentUserId={currentUserId}
+        mutateFetcher={mutateFetcher}
+        onReply={() => onReply(replyingTo === comment.id ? null : comment.id)}
+        isReplying={replyingTo === comment.id}
+      />
+
+      {/* Replies */}
+      {(comment.replies.length > 0 || optimisticReplyBody) && (
+        <div className="ml-10 mt-2 space-y-3 border-l pl-4">
+          {comment.replies.map((reply) => (
+            <CommentItem
+              key={reply.id}
+              comment={reply}
+              currentUserId={currentUserId}
+              mutateFetcher={mutateFetcher}
+              isReply
+            />
+          ))}
+          {optimisticReplyBody && (
+            <div className="flex gap-3 opacity-60">
+              <div className="size-7 rounded-full bg-muted shrink-0" />
+              <div className="flex-1 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+                {optimisticReplyBody}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Inline reply form */}
+      {replyingTo === comment.id && (
+        <div className="ml-10 mt-2 border-l pl-4">
+          <CommentForm
+            lessonId={lessonId}
+            parentId={comment.id}
+            fetcher={mutateFetcher}
+            disabled={isMutating}
+            placeholder={`Reply to ${comment.authorName}…`}
+            onCancel={() => onReply(null)}
+            autoFocus
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CommentItem ──────────────────────────────────────────────────────────────
+
+function CommentItem({
+  comment,
+  currentUserId,
+  mutateFetcher,
+  onReply,
+  isReplying = false,
+  isReply = false,
+}: {
+  comment: Omit<CommentData, "replies"> & { replies?: CommentData["replies"] };
+  currentUserId: number;
+  mutateFetcher: MutateFetcher;
+  onReply?: () => void;
+  isReplying?: boolean;
+  isReply?: boolean;
+}) {
+  const isDeleted = comment.deletedAt !== null;
+  const canDelete = comment.userId === currentUserId;
+
+  function handleDelete() {
+    mutateFetcher.submit(
+      { intent: "delete", commentId: String(comment.id) },
+      { method: "POST", action: "/api/lesson-comments" }
+    );
+  }
+
+  const avatarSize = isReply ? "size-7" : "size-8";
+
+  return (
+    <div className="flex gap-3">
+      {/* Avatar */}
+      <div
+        className={cn(
+          avatarSize,
+          "shrink-0 rounded-full bg-muted flex items-center justify-center text-xs font-medium overflow-hidden"
+        )}
+      >
+        {!isDeleted && comment.authorAvatarUrl ? (
+          <img
+            src={comment.authorAvatarUrl}
+            alt={comment.authorName}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span className="text-muted-foreground">
+            {isDeleted ? "?" : comment.authorName.charAt(0).toUpperCase()}
+          </span>
+        )}
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 min-w-0">
+        {isDeleted ? (
+          <p className="text-sm italic text-muted-foreground">
+            This comment was deleted.
+          </p>
+        ) : (
+          <>
+            <div className="mb-0.5 flex items-center gap-2">
+              <span className="text-sm font-medium">{comment.authorName}</span>
+              <span className="text-xs text-muted-foreground">
+                {new Date(comment.createdAt).toLocaleDateString()}
+              </span>
+            </div>
+            {comment.bodyHtml ? (
+              <div
+                className="prose prose-sm prose-neutral dark:prose-invert max-w-none"
+                dangerouslySetInnerHTML={{ __html: comment.bodyHtml }}
+              />
+            ) : (
+              <p className="text-sm">{comment.body}</p>
+            )}
+            <div className="mt-1 flex items-center gap-3">
+              {!isReply && onReply && (
+                <button
+                  type="button"
+                  onClick={onReply}
+                  className={cn(
+                    "flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors",
+                    isReplying && "text-primary"
+                  )}
+                >
+                  <Reply className="size-3" />
+                  Reply
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <Trash2 className="size-3" />
+                  Delete
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── CommentForm ──────────────────────────────────────────────────────────────
+
+function CommentForm({
+  lessonId,
+  parentId,
+  fetcher,
+  disabled,
+  placeholder,
+  onCancel,
+  autoFocus = false,
+}: {
+  lessonId: number;
+  parentId: number | null;
+  fetcher: MutateFetcher;
+  disabled: boolean;
+  placeholder: string;
+  onCancel?: () => void;
+  autoFocus?: boolean;
+}) {
+  const [body, setBody] = useState("");
+
+  // Clear the form after successful submission
+  const prevState = useRef(fetcher.state);
+  useEffect(() => {
+    if (prevState.current !== "idle" && fetcher.state === "idle" && fetcher.data?.success) {
+      setBody("");
+    }
+    prevState.current = fetcher.state;
+  }, [fetcher.state, fetcher.data]);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!body.trim()) return;
+    const formData = new FormData();
+    formData.set("intent", "create");
+    formData.set("lessonId", String(lessonId));
+    formData.set("body", body.trim());
+    if (parentId !== null) formData.set("parentId", String(parentId));
+    fetcher.submit(formData, { method: "POST", action: "/api/lesson-comments" });
+    setBody("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex gap-2">
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+        autoFocus={autoFocus}
+        rows={2}
+        className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSubmit(e as any);
+        }}
+      />
+      <div className="flex flex-col gap-1">
+        <button
+          type="submit"
+          disabled={disabled || !body.trim()}
+          className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          {disabled ? "…" : "Post"}
+        </button>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </form>
   );
 }
 
