@@ -14,6 +14,17 @@ import {
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { isTeamAdmin } from "~/services/teamService";
 
+export function shouldRevalidate({
+  formAction,
+  defaultShouldRevalidate,
+}: {
+  formAction?: string;
+  defaultShouldRevalidate: boolean;
+}) {
+  if (formAction === "/api/lesson-comments") return false;
+  return defaultShouldRevalidate;
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const users = getAllUsers();
   const currentUserId = await getCurrentUserId(request);

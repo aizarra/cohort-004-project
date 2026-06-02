@@ -69,6 +69,17 @@ const markCompleteSchema = z.object({
   intent: z.literal("mark-complete"),
 });
 
+export function shouldRevalidate({
+  formAction,
+  defaultShouldRevalidate,
+}: {
+  formAction?: string;
+  defaultShouldRevalidate: boolean;
+}) {
+  if (formAction === "/api/lesson-comments") return false;
+  return defaultShouldRevalidate;
+}
+
 export function meta({ data: loaderData }: Route.MetaArgs) {
   const title = loaderData?.lesson?.title ?? "Lesson";
   const courseTitle = loaderData?.course?.title ?? "Course";
