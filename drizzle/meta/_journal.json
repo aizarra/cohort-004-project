@@ -36,6 +36,13 @@
       "when": 1780413316111,
       "tag": "0004_far_nomad",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1780497948484,
+      "tag": "0005_fast_blue_blade",
+      "breakpoints": true
     }
   ]
 }

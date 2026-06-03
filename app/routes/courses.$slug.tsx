@@ -27,6 +27,7 @@ import {
 } from "~/components/ui/tabs";
 import {
   AlertTriangle,
+  Bookmark,
   BookOpen,
   CheckCircle2,
   Circle,
@@ -39,7 +40,7 @@ import {
 import { CourseImage } from "~/components/course-image";
 import { UserAvatar } from "~/components/user-avatar";
 import { data, isRouteErrorResponse } from "react-router";
-import { formatDuration, formatPrice } from "~/lib/utils";
+import { cn, formatDuration, formatPrice } from "~/lib/utils";
 import { renderMarkdown } from "~/lib/markdown.server";
 import { resolveCountry } from "~/lib/country.server";
 import { calculatePppPrice, getCountryTierInfo } from "~/lib/ppp";
@@ -47,6 +48,7 @@ import {
   getCourseAverageRating,
   getUserCourseRating,
 } from "~/services/reviewService";
+import { getBookmarkedLessonIds } from "~/services/bookmarkService";
 
 export function meta({ data: loaderData }: Route.MetaArgs) {
   const title = loaderData?.course?.title ?? "Course";
@@ -76,6 +78,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   let progress = 0;
   let lessonProgressMap: Record<number, string> = {};
   let nextLessonId: number | null = null;
+  let bookmarkedLessonIds: number[] = [];
 
   if (currentUserId) {
     enrolled = isUserEnrolled(currentUserId, course.id);
@@ -93,6 +96,11 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
       const nextLesson = getNextIncompleteLesson(currentUserId, course.id);
       nextLessonId = nextLesson?.id ?? null;
+
+      bookmarkedLessonIds = getBookmarkedLessonIds({
+        userId: currentUserId,
+        courseId: course.id,
+      });
     }
   }
 
@@ -127,6 +135,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     avgRating: ratingStats?.avgRating ?? null,
     reviewCount: ratingStats?.count ?? 0,
     userRating,
+    bookmarkedLessonIds,
   };
 }
 
@@ -198,6 +207,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
     avgRating,
     reviewCount,
     userRating,
+    bookmarkedLessonIds,
   } = loaderData;
   const isInstructor = currentUserId === course.instructorId;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -381,6 +391,7 @@ export default function CourseDetail({ loaderData }: Route.ComponentProps) {
               enrolled={enrolled}
               isInstructor={isInstructor}
               lessonProgressMap={lessonProgressMap}
+              bookmarkedLessonIds={new Set(bookmarkedLessonIds)}
             />
           </div>
         </div>
@@ -482,6 +493,7 @@ function CourseContent({
   enrolled,
   isInstructor,
   lessonProgressMap,
+  bookmarkedLessonIds,
 }: {
   course: {
     id: number;
@@ -499,6 +511,7 @@ function CourseContent({
   enrolled: boolean;
   isInstructor: boolean;
   lessonProgressMap: Record<number, string>;
+  bookmarkedLessonIds: Set<number>;
 }) {
   return (
     <div>
@@ -509,16 +522,26 @@ function CourseContent({
         </p>
       ) : (
         <div className="space-y-4">
-          {course.modules.map((mod) => (
+          {course.modules.map((mod) => {
+            const moduleHasBookmark = mod.lessons.some((l) =>
+              bookmarkedLessonIds.has(l.id)
+            );
+            return (
             <Card key={mod.id}>
               <CardHeader>
-                <h3 className="font-semibold">
+                <h3 className="font-semibold flex items-center gap-2">
                   <Link
                     to={`/courses/${course.slug}/${mod.id}`}
                     className="hover:underline"
                   >
                     {mod.title}
                   </Link>
+                  {moduleHasBookmark && (
+                    <Bookmark
+                      className="size-3.5 text-amber-500"
+                      fill="currentColor"
+                    />
+                  )}
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   {mod.lessons.length} lessons
@@ -532,6 +555,7 @@ function CourseContent({
                       status === LessonProgressStatus.Completed;
                     const isLessonInProgress =
                       status === LessonProgressStatus.InProgress;
+                    const isLessonBookmarked = bookmarkedLessonIds.has(lesson.id);
 
                     if (isInstructor) {
                       return (
@@ -584,6 +608,12 @@ function CourseContent({
                                 )}
                               </span>
                             )}
+                            {isLessonBookmarked && (
+                              <Bookmark
+                                className="size-4 shrink-0 text-amber-500"
+                                fill="currentColor"
+                              />
+                            )}
                           </Link>
                         ) : (
                           <div className="flex items-center gap-3 px-3 py-2 text-sm">
@@ -608,7 +638,8 @@ function CourseContent({
                 </ul>
               </CardContent>
             </Card>
-          ))}
+          );
+          })}
         </div>
       )}
     </div>
