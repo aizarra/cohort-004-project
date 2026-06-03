@@ -1044,7 +1044,7 @@ function QuizSection({
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type MutateFetcher = ReturnType<typeof useFetcher<{ success: boolean }>>;
+type MutateFetcher = ReturnType<typeof useFetcher<{ success: boolean; error?: string }>>;
 
 type CommentData = {
   id: number;
@@ -1083,6 +1083,7 @@ function LessonComments({
   const [total, setTotal] = useState(initialCount);
   const [nextOffset, setNextOffset] = useState(0);
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
+  const [everLoaded, setEverLoaded] = useState(false);
 
   const loaderFetcher = useFetcher<CommentsResponse>({
     key: `comments-load-${lessonId}`,
@@ -1126,20 +1127,21 @@ function LessonComments({
       setHasMore(more);
       setTotal(t);
       setNextOffset(offset + comments.length);
+      setEverLoaded(true);
     }
     prevLoaderState.current = loaderFetcher.state;
   }, [loaderFetcher.state, loaderFetcher.data]);
 
-  // Re-fetch after successful mutation
+  // Re-fetch after successful mutation; show error toast on failure
   const prevMutateState = useRef(mutateFetcher.state);
   useEffect(() => {
-    if (
-      prevMutateState.current !== "idle" &&
-      mutateFetcher.state === "idle" &&
-      mutateFetcher.data?.success
-    ) {
-      refetch();
-      setReplyingTo(null);
+    if (prevMutateState.current !== "idle" && mutateFetcher.state === "idle") {
+      if (mutateFetcher.data?.success) {
+        refetch();
+        setReplyingTo(null);
+      } else if (mutateFetcher.data && !mutateFetcher.data.success) {
+        toast.error("Failed to post comment. Please try again.");
+      }
     }
     prevMutateState.current = mutateFetcher.state;
   }, [mutateFetcher.state, mutateFetcher.data]);
@@ -1171,7 +1173,7 @@ function LessonComments({
 
       {isOpen && (
         <div className="mt-3 space-y-4">
-          {isLoading && allComments.length === 0 && (
+          {!everLoaded && (
             <div className="space-y-3">
               {[1, 2].map((i) => (
                 <div key={i} className="flex gap-3">
@@ -1183,6 +1185,12 @@ function LessonComments({
                 </div>
               ))}
             </div>
+          )}
+
+          {everLoaded && allComments.length === 0 && !optimisticBody && (
+            <p className="text-sm text-muted-foreground">
+              No comments yet. Be the first to comment!
+            </p>
           )}
 
           {allComments.map((comment) => (

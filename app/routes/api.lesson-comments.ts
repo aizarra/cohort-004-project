@@ -1,4 +1,3 @@
-import { data } from "react-router";
 import { z } from "zod";
 import type { Route } from "./+types/api.lesson-comments";
 import { getCurrentUserId } from "~/lib/session";
@@ -14,7 +13,6 @@ import {
 } from "~/services/commentService";
 import { getModuleById } from "~/services/moduleService";
 import { getLessonById } from "~/services/lessonService";
-import { getCourseById } from "~/services/courseService";
 import { parseFormData } from "~/lib/validation";
 
 const createSchema = z.object({
@@ -29,28 +27,30 @@ const deleteSchema = z.object({
   commentId: z.coerce.number().int().positive(),
 });
 
+const emptyComments = { comments: [], hasMore: false, total: 0, offset: 0 };
+
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const lessonId = Number(url.searchParams.get("lessonId"));
   const offset = Number(url.searchParams.get("offset") ?? "0");
 
   if (!lessonId || isNaN(lessonId)) {
-    throw data("Invalid lessonId", { status: 400 });
+    return emptyComments;
   }
 
   const currentUserId = await getCurrentUserId(request);
   if (!currentUserId) {
-    throw data("Unauthorized", { status: 401 });
+    return emptyComments;
   }
 
   const lesson = getLessonById(lessonId);
   if (!lesson) {
-    throw data("Lesson not found", { status: 404 });
+    return emptyComments;
   }
 
   const mod = getModuleById(lesson.moduleId);
   if (!mod) {
-    throw data("Module not found", { status: 404 });
+    return emptyComments;
   }
 
   const enrolled = isUserEnrolled(currentUserId, mod.courseId);
@@ -58,7 +58,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const isInstructor = currentUserId === instructorId;
 
   if (!enrolled && !isInstructor) {
-    throw data("Forbidden", { status: 403 });
+    return emptyComments;
   }
 
   const { comments, hasMore, total } = getLessonComments(
@@ -88,10 +88,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { comments: rendered, hasMore, total, offset };
 }
 
+const failure = { success: false as const };
+
 export async function action({ request }: Route.ActionArgs) {
   const currentUserId = await getCurrentUserId(request);
   if (!currentUserId) {
-    throw data("Unauthorized", { status: 401 });
+    return failure;
   }
 
   const formData = await request.formData();
@@ -100,19 +102,19 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "create") {
     const parsed = parseFormData(formData, createSchema);
     if (!parsed.success) {
-      throw data("Invalid input", { status: 400 });
+      return failure;
     }
 
     const { lessonId, body, parentId } = parsed.data;
 
     const lesson = getLessonById(lessonId);
     if (!lesson) {
-      throw data("Lesson not found", { status: 404 });
+      return failure;
     }
 
     const mod = getModuleById(lesson.moduleId);
     if (!mod) {
-      throw data("Module not found", { status: 404 });
+      return failure;
     }
 
     const enrolled = isUserEnrolled(currentUserId, mod.courseId);
@@ -120,14 +122,14 @@ export async function action({ request }: Route.ActionArgs) {
     const isInstructor = currentUserId === instructorId;
 
     if (!enrolled && !isInstructor) {
-      throw data("Forbidden", { status: 403 });
+      return failure;
     }
 
     // If replying, verify parent exists and belongs to this lesson
     if (parentId !== undefined) {
       const parent = getCommentById(parentId);
       if (!parent || parent.lessonId !== lessonId || parent.parentId !== null) {
-        throw data("Invalid parent comment", { status: 400 });
+        return failure;
       }
     }
 
@@ -137,20 +139,20 @@ export async function action({ request }: Route.ActionArgs) {
       body,
       parentId ?? null
     );
-    return { success: true, comment };
+    return { success: true as const, comment };
   }
 
   if (intent === "delete") {
     const parsed = parseFormData(formData, deleteSchema);
     if (!parsed.success) {
-      throw data("Invalid input", { status: 400 });
+      return failure;
     }
 
     const { commentId } = parsed.data;
     const comment = getCommentById(commentId);
 
     if (!comment) {
-      throw data("Comment not found", { status: 404 });
+      return failure;
     }
 
     const instructorId = getCourseInstructorIdForLesson(comment.lessonId);
@@ -158,12 +160,12 @@ export async function action({ request }: Route.ActionArgs) {
     const isInstructor = currentUserId === instructorId;
 
     if (!isAuthor && !isInstructor) {
-      throw data("Forbidden", { status: 403 });
+      return failure;
     }
 
     softDeleteComment(commentId);
-    return { success: true };
+    return { success: true as const };
   }
 
-  throw data("Invalid intent", { status: 400 });
+  return failure;
 }
