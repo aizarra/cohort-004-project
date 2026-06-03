@@ -7,3 +7,4 @@ const addUserToPost = (userId: string, postId: string) => {};
 // GOOD
 const addUserToPost = (opts: { userId: string; postId: string }) => {};
 ```
+Update log in a didactic tone, as if you were a computer science educator

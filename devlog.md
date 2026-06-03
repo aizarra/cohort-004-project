@@ -316,4 +316,78 @@ The tradeoff is that every comment needs a server round-trip to render, which is
 
 ---
 
+## Feature: Lesson Bookmarks
+
+### What we built
+
+A private bookmark system that lets enrolled students save lessons for later reference. Students can toggle a bookmark directly on the lesson page. Everywhere else — the curriculum sidebar and the course detail page — the bookmark icon appears as a passive indicator only, so you can see at a glance which lessons you've already saved.
+
+### Database — the schema
+
+We added a `lesson_bookmarks` table:
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | integer | Auto-increment primary key |
+| `user_id` | integer | FK → users.id |
+| `lesson_id` | integer | FK → lessons.id |
+| `created_at` | text | ISO 8601 timestamp |
+
+A unique index on `(user_id, lesson_id)` prevents a student from bookmarking the same lesson twice — the database enforces the one-bookmark-per-lesson rule so we don't have to do it in code.
+
+### The service — `bookmarkService.ts`
+
+Three functions, following the same pattern as `reviewService.ts`:
+
+- **`isLessonBookmarked`** — looks up whether a specific user/lesson pair exists in the table. Returns a boolean. Used by the lesson page loader to know the initial state.
+- **`toggleBookmark`** — checks for an existing row: if found, deletes it; if not, inserts one. Returns `{ bookmarked: boolean }` so the caller knows the new state.
+- **`getBookmarkedLessonIds`** — takes a `userId` and `courseId`, finds all lesson IDs in that course that the user has bookmarked. Returns a `number[]`. This is the "batch load" used by loaders to avoid N+1 queries.
+
+Note: all these functions take two integer parameters of the same type, so they use object parameters — `opts: { userId: number; lessonId: number }` — rather than positional arguments. This follows the project convention in CLAUDE.md and makes call sites self-documenting.
+
+### Loading strategy — batch upfront, not on demand
+
+A key design decision: both the lesson page loader and the course detail loader call `getBookmarkedLessonIds` during the server request and pass the full list of bookmarked IDs down to the UI as a `number[]`.
+
+This means the bookmark indicators in the sidebar and course detail are **server-rendered** — no extra network requests, no flicker, no loading states. The only time the network is involved is when the user clicks the toggle button.
+
+The component receives the array and converts it to a `Set<number>` at the call site (`new Set(bookmarkedLessonIds)`), so lookups in the render loop are O(1) instead of O(n).
+
+### Optimistic UI on the toggle button
+
+The bookmark toggle button on the lesson page uses a dedicated fetcher:
+
+```tsx
+const bookmarkFetcher = useFetcher({ key: `bookmark-${lesson.id}` });
+```
+
+The displayed state is computed optimistically: while a toggle request is in flight, we immediately flip the icon without waiting for the server to confirm:
+
+```tsx
+const optimisticBookmarked =
+  bookmarkFetcher.formData?.get("intent") === "toggle-bookmark"
+    ? !isBookmarked
+    : isBookmarked;
+```
+
+If `formData` is set (meaning a submission is in flight), we assume the opposite of the current server state. If it's `null` (idle), we use the real server value. This makes the icon respond instantly to clicks with no perceptible lag.
+
+### Where the icon appears — two different roles
+
+The bookmark icon plays two different roles across the app:
+
+| Location | Role | Interactive? |
+|---|---|---|
+| Lesson page metadata row | Toggle button | Yes — click to bookmark/unbookmark |
+| Curriculum sidebar (lesson row) | Passive indicator | No |
+| Curriculum sidebar (module header) | Passive indicator if any child bookmarked | No |
+| Course detail page (lesson row) | Passive indicator | No |
+| Course detail page (module card header) | Passive indicator if any child bookmarked | No |
+
+The module-level indicator is useful when a module is collapsed: you can see at a glance that something inside is bookmarked without having to expand it first.
+
+The icon uses `fill="currentColor"` with `text-amber-500` when bookmarked, and `fill="none"` with `text-muted-foreground` for the toggle button's unset state. Passive indicators only appear when bookmarked — there is no "empty" icon in list views.
+
+---
+
 *This log will be updated as we add more features.*
