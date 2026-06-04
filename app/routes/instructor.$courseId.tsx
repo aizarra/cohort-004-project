@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Link, useFetcher } from "react-router";
 import { toast } from "sonner";
 import {
@@ -69,6 +69,9 @@ import {
   Award,
   Globe,
   FileText,
+  BarChart2,
+  DollarSign,
+  GraduationCap,
 } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
 import { z } from "zod";
@@ -985,6 +988,20 @@ export default function InstructorCourseEditor({
   loaderData,
 }: Route.ComponentProps) {
   const { course, lessonCount, enrollmentCount, students, quizCount } = loaderData;
+  const analyticsFetcher = useFetcher({ key: `analytics-${course.id}` });
+  const [hasLoadedAnalytics, setHasLoadedAnalytics] = useState(false);
+
+  const handleAnalyticsTabClick = useCallback(() => {
+    if (!hasLoadedAnalytics) {
+      setHasLoadedAnalytics(true);
+      analyticsFetcher.load(`/api/course-analytics/${course.id}`);
+    }
+  }, [hasLoadedAnalytics, analyticsFetcher, course.id]);
+
+  const analyticsData = analyticsFetcher.data && !("error" in analyticsFetcher.data)
+    ? analyticsFetcher.data
+    : null;
+
   const statusFetcher = useFetcher();
   const reorderFetcher = useFetcher();
   const lessonReorderFetcher = useFetcher();
@@ -1192,6 +1209,10 @@ export default function InstructorCourseEditor({
           <TabsTrigger value="students">
             <Users className="size-4" />
             Students
+          </TabsTrigger>
+          <TabsTrigger value="analytics" onClick={handleAnalyticsTabClick}>
+            <BarChart2 className="size-4" />
+            Analytics
           </TabsTrigger>
         </TabsList>
 
@@ -1511,6 +1532,111 @@ export default function InstructorCourseEditor({
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics" className="mt-6">
+          {analyticsFetcher.state !== "idle" ? (
+            // Skeleton placeholders while loading
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {[0, 1, 2].map((i) => (
+                  <Card key={i}>
+                    <CardContent className="p-6">
+                      <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+                      <div className="mt-3 h-8 w-32 animate-pulse rounded bg-muted" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <Card>
+                <CardContent className="p-6">
+                  <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+                  <div className="mt-4 h-48 animate-pulse rounded bg-muted" />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6">
+                  <div className="h-4 w-40 animate-pulse rounded bg-muted" />
+                  <div className="mt-4 h-48 animate-pulse rounded bg-muted" />
+                </CardContent>
+              </Card>
+            </div>
+          ) : !hasLoadedAnalytics ? (
+            // Not yet triggered — show a prompt
+            <Card>
+              <CardContent className="py-12 text-center">
+                <BarChart2 className="mx-auto mb-3 size-8 text-muted-foreground/50" />
+                <p className="text-muted-foreground">
+                  Click this tab to load analytics for this course.
+                </p>
+              </CardContent>
+            </Card>
+          ) : analyticsData === null ? (
+            // Fetch completed but returned an error
+            <Card>
+              <CardContent className="py-8 text-center">
+                <AlertTriangle className="mx-auto mb-3 size-8 text-muted-foreground/50" />
+                <p className="text-muted-foreground">
+                  Could not load analytics. Please try refreshing the page.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <Users className="size-4" />
+                      Total Enrolled
+                    </div>
+                    <p className="mt-2 text-3xl font-bold">
+                      {analyticsData.totalEnrolled.toLocaleString()}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <DollarSign className="size-4" />
+                      Gross Revenue
+                    </div>
+                    <p className="mt-2 text-3xl font-bold">
+                      {(analyticsData.totalRevenueCents / 100).toLocaleString("en-US", {
+                        style: "currency",
+                        currency: "USD",
+                      })}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <GraduationCap className="size-4" />
+                      Completion Rate
+                    </div>
+                    <p className="mt-2 text-3xl font-bold">
+                      {analyticsData.completionRate.toFixed(1)}%
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Empty state for chart sections */}
+              {analyticsData.totalEnrolled === 0 && (
+                <Card>
+                  <CardContent className="py-8 text-center">
+                    <BarChart2 className="mx-auto mb-3 size-8 text-muted-foreground/50" />
+                    <p className="text-muted-foreground">
+                      No enrollment data yet. Charts will appear once students enroll.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
         </TabsContent>
 
         {/* Students Tab */}

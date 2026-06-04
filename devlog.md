@@ -4,6 +4,69 @@ This file documents every feature we build and every bug we fix, written in a wa
 
 ---
 
+## Feature: Instructor Analytics Dashboard — Phase 1 (Tracer Bullet)
+
+### What we built
+
+An **Analytics tab** inside the existing course editor, backed by a dedicated API route that returns aggregated course statistics. This is the thinnest end-to-end slice: it touches every layer (database → API route → UI) and is immediately demoable, which is exactly what a tracer bullet is for.
+
+### New files
+
+- **`app/routes/api.course-analytics.$courseId.ts`** — a GET-only route that computes `totalEnrolled`, `totalRevenueCents`, and `completionRate` from the database, then returns them alongside empty arrays for the chart sections that will be populated in later phases.
+- The route is registered in `app/routes.ts` as `api/course-analytics/:courseId`.
+
+### UI changes
+
+`instructor.$courseId.tsx` gains:
+- An **Analytics tab trigger** — sits next to the existing Content, Settings, Sales Copy, and Students tabs.
+- A `useFetcher` that fires `analyticsFetcher.load(...)` the *first* time the tab is clicked. A `hasLoadedAnalytics` boolean guards against re-fetching on subsequent tab switches.
+- **Skeleton placeholders** (animated pulse divs) while the fetcher is in flight.
+- **Three summary cards** once data arrives: Total Enrolled, Gross Revenue (formatted from cents to `$X,XXX.XX`), and Completion Rate (as a percentage).
+- An **empty state** when `totalEnrolled === 0`, explaining that charts appear once students enroll.
+
+### Key concepts
+
+#### Lazy data loading with useFetcher
+
+Most routes in React Router load data eagerly: the `loader` runs on every navigation to the route. But for the Analytics tab, we deliberately *delay* the fetch until the instructor actually clicks the tab. This keeps the course editor fast when the instructor just wants to edit content.
+
+The pattern looks like this:
+
+```tsx
+const analyticsFetcher = useFetcher({ key: `analytics-${course.id}` });
+const [hasLoadedAnalytics, setHasLoadedAnalytics] = useState(false);
+
+function handleAnalyticsTabClick() {
+  if (!hasLoadedAnalytics) {
+    setHasLoadedAnalytics(true);
+    analyticsFetcher.load(`/api/course-analytics/${course.id}`);
+  }
+}
+```
+
+`hasLoadedAnalytics` ensures we only ever fire one request per page visit. The `key` prop on `useFetcher` gives us a stable reference — the same fetcher instance is used across renders, so switching tabs and coming back shows the cached data immediately.
+
+#### return vs. throw in fetcher-targeted API routes
+
+This is a subtle but important distinction. When you `throw data(...)` from a loader, React Router's error boundary mechanism activates — it walks up the component tree looking for the nearest error boundary and replaces the matching UI. For a route error on a page you own, that's fine. But for an API route called by a fetcher that targets a *different* route (like `/api/course-analytics/:courseId`), throwing replaces the entire page — the instructor would lose the whole editor view.
+
+The safe pattern: **always `return data(...)` (not `throw`) from API routes that serve fetchers**. Returning keeps the error as the fetcher's `.data` and leaves the rest of the page untouched.
+
+#### Revenue in cents, display in dollars
+
+The API always returns `totalRevenueCents` as an integer (e.g., `4999` for $49.99). The UI is solely responsible for dividing by 100 and formatting:
+
+```tsx
+(analyticsData.totalRevenueCents / 100).toLocaleString("en-US", {
+  style: "currency",
+  currency: "USD",
+})
+```
+
+This separation of concerns prevents floating-point errors in monetary arithmetic and makes the API response predictable regardless of locale.
+
+---
+
 ## Feature: Course Rating
 
 **Commit:** `ee34581 adds rating feature`
