@@ -4,6 +4,59 @@ This file documents every feature we build and every bug we fix, written in a wa
 
 ---
 
+## Feature: Instructor Analytics Dashboard — Phase 6 (Quiz Distributions API)
+
+### What we built
+
+The analytics API route now returns real **quiz score distribution data** instead of an empty stub array. When an instructor views the Analytics tab, the server computes how each student performed across every quiz in the course — grouped into five fixed score buckets — ready for the histogram charts that Phase 7 will render.
+
+### The core design challenge: "best attempt" semantics
+
+Students may take the same quiz multiple times. Counting every attempt would skew the distribution toward low scores (because early, failed attempts would outnumber later, successful ones). Instead, we count only each student's **best** attempt score.
+
+In SQL terms, this is a `GROUP BY (userId, quizId)` with a `MAX(score)` aggregate — one row per student per quiz, keeping only their highest score:
+
+```sql
+SELECT quiz_id, MAX(score) AS best_score
+FROM quiz_attempts
+WHERE quiz_id IN (...)
+GROUP BY user_id, quiz_id
+```
+
+This gives us a flat list of per-student best scores that we then bucket in JavaScript.
+
+### Curriculum ordering (same as Phase 4's drop-off funnel)
+
+Quizzes don't have a position of their own — they belong to a **lesson**, which belongs to a **module**, which has a position within the course. So we join four tables (`quizzes → lessons → modules → course`) and sort by `modules.position` then `lessons.position`. This guarantees quizzes appear in the exact sequence a student encounters them.
+
+### The five fixed buckets
+
+Scores are real numbers in [0, 1]. We map each score to one of five fixed ranges:
+
+| Bucket | Range       |
+|--------|-------------|
+| 0      | [0%, 20%)   |
+| 1      | [20%, 40%)  |
+| 2      | [40%, 60%)  |
+| 3      | [60%, 80%)  |
+| 4      | [80%, 100%] |
+
+The index formula is `Math.floor(score / 0.2)`, with one special case: a score of exactly `1.0` would yield index `5` (out of range), so we clamp it to `4`. This is a classic **off-by-one at the upper boundary** — always worth a dedicated comment in the code.
+
+### Query efficiency
+
+We make exactly **two** database queries for quiz distributions:
+1. `quizzesInOrder` — one JOIN query to get all quizzes in curriculum order.
+2. `bestAttemptsRaw` — one query with an `IN` clause to get best scores across all quizzes at once.
+
+We then merge in JavaScript using a `Map<quizId, number[]>`, giving O(1) per-quiz lookup. This is the same pattern used by the Phase 4 drop-off calculation and avoids an N+1 query anti-pattern.
+
+### Empty-course guard
+
+When `quizIds` is an empty array (no quizzes in the course), we skip the `quizAttempts` query entirely and return `quizDistributions: []`. The UI uses this as the signal to omit the section from the DOM completely.
+
+---
+
 ## Feature: Instructor Analytics Dashboard — Phase 1 (Tracer Bullet)
 
 ### What we built

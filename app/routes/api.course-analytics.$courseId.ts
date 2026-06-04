@@ -4,7 +4,7 @@ import type { Route } from "./+types/api.course-analytics.$courseId";
 import { getCurrentUserId } from "~/lib/session";
 import { getUserById } from "~/services/userService";
 import { getCourseById } from "~/services/courseService";
-import { UserRole, enrollments, purchases, modules, lessons, lessonProgress } from "~/db/schema";
+import { UserRole, enrollments, purchases, modules, lessons, lessonProgress, quizzes, quizAttempts } from "~/db/schema";
 import { db } from "~/db";
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -104,6 +104,19 @@ function buildTimeSeries(opts: {
   }
 
   return orderedKeys.map((key) => map.get(key)!);
+}
+
+/**
+ * Maps a raw score (0–1) to one of five fixed histogram bucket indices:
+ *   0 → [0, 0.2)   1 → [0.2, 0.4)   2 → [0.4, 0.6)
+ *   3 → [0.6, 0.8)   4 → [0.8, 1.0]
+ *
+ * The score 1.0 is a boundary case: Math.floor(1.0 / 0.2) would yield 5,
+ * which is out of range. We clamp it to the last bucket (index 4).
+ */
+function getBucketIndex(score: number): number {
+  if (score >= 1.0) return 4;
+  return Math.floor(score / 0.2);
 }
 
 export async function loader({ params, request }: Route.LoaderArgs) {
@@ -250,6 +263,66 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     };
   });
 
+  // --- Quiz distributions ---
+  // We need every quiz for this course, in the same curriculum order used by
+  // the drop-off funnel. A quiz belongs to a lesson, which belongs to a module,
+  // which belongs to the course — so we join all four tables and sort by
+  // module.position then lesson.position.
+  const quizzesInOrder = db
+    .select({
+      quizId: quizzes.id,
+      quizTitle: quizzes.title,
+      lessonTitle: lessons.title,
+      passingScore: quizzes.passingScore,
+    })
+    .from(quizzes)
+    .innerJoin(lessons, eq(quizzes.lessonId, lessons.id))
+    .innerJoin(modules, eq(lessons.moduleId, modules.id))
+    .where(eq(modules.courseId, courseId))
+    .orderBy(asc(modules.position), asc(lessons.position))
+    .all();
+
+  // When the course has no quizzes at all, we skip the heavy attempts query
+  // and return an empty array — the UI will omit the entire section.
+  const quizIds = quizzesInOrder.map((q) => q.quizId);
+
+  // Fetch each student's BEST attempt score per quiz.
+  // Grouping by (userId, quizId) and taking MAX(score) ensures we count each
+  // student only once per quiz — their highest score, not their latest.
+  const bestAttemptsRaw =
+    quizIds.length > 0
+      ? db
+          .select({
+            quizId: quizAttempts.quizId,
+            bestScore: sql<number>`max(${quizAttempts.score})`,
+          })
+          .from(quizAttempts)
+          .where(inArray(quizAttempts.quizId, quizIds))
+          .groupBy(quizAttempts.userId, quizAttempts.quizId)
+          .all()
+      : [];
+
+  // Index the best-attempt rows by quizId so we can do O(1) lookups below.
+  const scoresByQuiz = new Map<number, number[]>();
+  for (const { quizId, bestScore } of bestAttemptsRaw) {
+    if (!scoresByQuiz.has(quizId)) scoresByQuiz.set(quizId, []);
+    scoresByQuiz.get(quizId)!.push(bestScore);
+  }
+
+  // For each quiz, tally the five fixed score buckets from the per-student
+  // best scores collected above. The bucket index is a pure math operation
+  // (see getBucketIndex); we just accumulate counts.
+  const quizDistributions = quizzesInOrder.map(
+    ({ quizId, quizTitle, lessonTitle, passingScore }) => {
+      const scores = scoresByQuiz.get(quizId) ?? [];
+      const buckets: [number, number, number, number, number] = [0, 0, 0, 0, 0];
+      for (const score of scores) {
+        buckets[getBucketIndex(score)]++;
+      }
+      return { quizId, quizTitle, lessonTitle, passingScore, buckets, totalAttempted: scores.length };
+    }
+  );
+
   return {
     totalEnrolled,
     totalRevenueCents,
@@ -257,13 +330,6 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     granularity,
     timeSeries,
     lessonDropoff,
-    quizDistributions: [] as Array<{
-      quizId: number;
-      quizTitle: string;
-      lessonTitle: string;
-      passingScore: number;
-      buckets: [number, number, number, number, number];
-      totalAttempted: number;
-    }>,
+    quizDistributions,
   };
 }
