@@ -75,6 +75,7 @@ import {
 } from "lucide-react";
 import {
   ComposedChart,
+  BarChart,
   Bar,
   Line,
   XAxis,
@@ -1725,6 +1726,60 @@ export default function InstructorCourseEditor({
                           dot={false}
                         />
                       </ComposedChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Lesson Drop-off Funnel */}
+              <Card>
+                <CardContent className="p-6">
+                  <h2 className="mb-4 text-base font-semibold">Lesson Drop-off Funnel</h2>
+                  {analyticsData.totalEnrolled === 0 ? (
+                    <div className="flex h-48 items-center justify-center">
+                      <p className="text-sm text-muted-foreground">No student progress data yet</p>
+                    </div>
+                  ) : analyticsData.lessonDropoff.length === 0 ? (
+                    <div className="flex h-48 items-center justify-center">
+                      <p className="text-sm text-muted-foreground">No lessons in this course yet</p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart
+                        data={analyticsData.lessonDropoff}
+                        margin={{ top: 4, right: 16, left: 0, bottom: 60 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                        <XAxis
+                          dataKey="title"
+                          tick={{ fontSize: 11, angle: -40, textAnchor: "end" }}
+                          interval={0}
+                          className="fill-muted-foreground"
+                        />
+                        <YAxis
+                          domain={[0, 100]}
+                          tickFormatter={(v: number) => `${v}%`}
+                          tick={{ fontSize: 12 }}
+                          className="fill-muted-foreground"
+                          label={{
+                            value: "Completed (%)",
+                            angle: -90,
+                            position: "insideLeft",
+                            offset: 10,
+                            style: { fontSize: 11 },
+                          }}
+                        />
+                        <Tooltip
+                          formatter={(value: number) => [`${value.toFixed(1)}%`, "Completion rate"]}
+                          labelFormatter={(label: string) => label}
+                        />
+                        <Bar
+                          dataKey="completionRate"
+                          name="Completion rate"
+                          fill="var(--chart-3)"
+                          radius={[3, 3, 0, 0]}
+                        />
+                      </BarChart>
                     </ResponsiveContainer>
                   )}
                 </CardContent>

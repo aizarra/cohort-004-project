@@ -618,4 +618,46 @@ Using a consistent denominator makes every bar in the funnel chart directly comp
 
 ---
 
+## Feature: Instructor Analytics Dashboard — Phase 5 (Drop-off Chart UI)
+
+### What we built
+
+The lesson drop-off data that Phase 4 wired up in the API is now **visible as a bar chart** inside the Analytics tab. Every lesson in curriculum order gets one bar; the bar's height encodes what percentage of enrolled students completed it.
+
+### Changed files
+
+- **`app/routes/instructor.$courseId.tsx`** — added `BarChart` to the Recharts import, then inserted a new "Lesson Drop-off Funnel" card after the time-series chart.
+
+### How the chart works
+
+The `BarChart` receives the `lessonDropoff` array directly as its `data` prop:
+
+```tsx
+<BarChart data={analyticsData.lessonDropoff} margin={{ top: 4, right: 16, left: 0, bottom: 60 }}>
+  <XAxis dataKey="title" tick={{ fontSize: 11, angle: -40, textAnchor: "end" }} interval={0} />
+  <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+  <Tooltip formatter={(value) => [`${value.toFixed(1)}%`, "Completion rate"]} />
+  <Bar dataKey="completionRate" fill="var(--chart-3)" radius={[3, 3, 0, 0]} />
+</BarChart>
+```
+
+A few design decisions worth noting:
+
+- **`interval={0}`** forces every lesson title to render on the X-axis, with a `−40°` rotation to prevent overlap. The `bottom: 60` margin gives the angled labels room to breathe below the axis.
+- **`domain={[0, 100]}`** pins the Y-axis range to the full 0–100% scale rather than auto-fitting to the data. This makes it immediately obvious when no lesson has a high completion rate — a chart that auto-scales to 30% and fills the height looks healthier than it is.
+- **`var(--chart-3)`** for fill color keeps the funnel visually distinct from the enrollment bars (`--chart-1`) and revenue line (`--chart-2`) in the time-series chart above it.
+
+### Empty states
+
+Two distinct empty states cover the cases where the chart has nothing to show:
+
+1. **`totalEnrolled === 0`** — The entire funnel section renders a "No student progress data yet" message. There's no point computing drop-off when nobody has enrolled.
+2. **`lessonDropoff.length === 0`** — The course exists but has no lessons yet. The message "No lessons in this course yet" is shown instead of a blank chart area.
+
+### Why a separate BarChart instead of ComposedChart
+
+The time-series card above already uses `ComposedChart` because it needs *two Y-axes* (enrollments left, revenue right) and two series types (Bar + Line). The drop-off funnel is simpler: one series, one axis, uniform bar color. Using plain `BarChart` keeps the component's intent clear and avoids the extra configuration overhead of `ComposedChart`.
+
+---
+
 *This log will be updated as we add more features.*

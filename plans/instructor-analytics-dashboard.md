@@ -97,10 +97,10 @@ Render a `BarChart` for `lessonDropoff`. Each bar represents one lesson in curri
 
 ### Acceptance criteria
 
-- [ ] One bar per lesson rendered in curriculum order.
-- [ ] Bar height reflects `completionRate` (0–100).
-- [ ] Lesson titles appear in tooltips or as X-axis labels.
-- [ ] When `totalEnrolled === 0`, the section is hidden with an empty-state message.
+- [x] One bar per lesson rendered in curriculum order.
+- [x] Bar height reflects `completionRate` (0–100).
+- [x] Lesson titles appear in tooltips or as X-axis labels.
+- [x] When `totalEnrolled === 0`, the section is hidden with an empty-state message.
 
 ---
 
