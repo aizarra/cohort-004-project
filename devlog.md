@@ -117,6 +117,74 @@ Each time bucket is identified by an opaque string key (`"2025-03-03"` for a wee
 
 ---
 
+## Feature: Instructor Analytics Dashboard — Phase 3 (Time Series Chart UI)
+
+### What we built
+
+The Analytics tab now renders an **Enrollments & Revenue Over Time** chart. When `timeSeries` has data, a `ComposedChart` from Recharts displays enrollment counts as bars on the left Y-axis and revenue as a line on the right Y-axis — both sharing the same time-bucket X-axis. When `timeSeries` is empty, a "No enrollment data yet" message takes its place.
+
+### Changed files
+
+- **`app/routes/instructor.$courseId.tsx`** — added Recharts imports and replaced the old enrollment-zero empty-state block with the full chart section.
+- **`package.json`** — `recharts` added as a dependency.
+
+### Key concepts
+
+#### The ComposedChart: mixing series types on one canvas
+
+Recharts' `ComposedChart` is the component to reach for when you want more than one series type in the same chart. It accepts any combination of `Bar`, `Line`, `Area`, and `Scatter` children. Here, bars encode *count* (enrollments) and a line encodes *money* (revenue) — two quantities with different magnitudes and units.
+
+```tsx
+<ComposedChart data={data}>
+  <Bar yAxisId="left"  dataKey="enrollments"   />
+  <Line yAxisId="right" dataKey="revenueDollars" />
+</ComposedChart>
+```
+
+Without the `yAxisId` prop, both series would compete on the same scale — a course with 5 enrollments and $500 revenue would make the enrollment bars nearly invisible at 1% the height of the revenue line. Two Y-axes solve this: each series lives on a scale calibrated to its own range.
+
+#### Dual Y-axes: left for counts, right for dollars
+
+Two `<YAxis>` components registered with matching `yAxisId` strings tell Recharts to render a second scale on the opposite side of the chart:
+
+```tsx
+<YAxis yAxisId="left"  />                  {/* enrollment count */}
+<YAxis yAxisId="right" orientation="right" {/* revenue in dollars */}
+  tickFormatter={(v) => v.toLocaleString("en-US", {
+    style: "currency", currency: "USD", maximumFractionDigits: 0,
+  })}
+/>
+```
+
+The `tickFormatter` on the right axis converts raw numbers to currency strings so the scale reads "$0", "$500", "$1,000" rather than bare integers.
+
+#### Transforming cents to dollars at the render boundary
+
+The API returns `revenueCents` (an integer) to avoid floating-point arithmetic in the server-side aggregation. The chart transforms it to `revenueDollars` in the `.map()` that builds the chart data array — the one place where UI concerns are allowed to touch monetary values:
+
+```tsx
+data={analyticsData.timeSeries.map((b) => ({
+  label: b.label,
+  enrollments: b.enrollments,
+  revenueDollars: b.revenueCents / 100,   // ← only conversion in the UI
+}))}
+```
+
+The Tooltip `formatter` applies the same rule: format as currency only for the "Revenue" series, leave counts as integers.
+
+#### CSS custom property colors in SVG
+
+Chart colors use the design system tokens defined in `app.css` — `var(--chart-1)` (amber) for enrollment bars and `var(--chart-2)` (teal) for the revenue line. In HTML-embedded SVG (as opposed to standalone `.svg` files), CSS custom properties resolve correctly in `fill` and `stroke` attributes, so Recharts can accept them as plain strings:
+
+```tsx
+<Bar  fill="var(--chart-1)" />
+<Line stroke="var(--chart-2)" />
+```
+
+This keeps the chart visually consistent with the rest of the UI and automatically follows any future theme changes.
+
+---
+
 ## Feature: Course Rating
 
 **Commit:** `ee34581 adds rating feature`

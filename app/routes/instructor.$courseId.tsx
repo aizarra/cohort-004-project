@@ -73,6 +73,17 @@ import {
   DollarSign,
   GraduationCap,
 } from "lucide-react";
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 import { data, isRouteErrorResponse } from "react-router";
 import { z } from "zod";
 import { parseFormData, parseParams } from "~/lib/validation";
@@ -1624,17 +1635,100 @@ export default function InstructorCourseEditor({
                 </Card>
               </div>
 
-              {/* Empty state for chart sections */}
-              {analyticsData.totalEnrolled === 0 && (
-                <Card>
-                  <CardContent className="py-8 text-center">
-                    <BarChart2 className="mx-auto mb-3 size-8 text-muted-foreground/50" />
-                    <p className="text-muted-foreground">
-                      No enrollment data yet. Charts will appear once students enroll.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
+              {/* Enrollments & Revenue Over Time */}
+              <Card>
+                <CardContent className="p-6">
+                  <h2 className="mb-4 text-base font-semibold">
+                    Enrollments &amp; Revenue Over Time
+                    {analyticsData.granularity === "weekly" && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">(weekly)</span>
+                    )}
+                    {analyticsData.granularity === "monthly" && (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">(monthly)</span>
+                    )}
+                  </h2>
+                  {analyticsData.timeSeries.length === 0 ? (
+                    <div className="flex h-48 items-center justify-center">
+                      <p className="text-sm text-muted-foreground">No enrollment data yet</p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <ComposedChart
+                        data={analyticsData.timeSeries.map((b: { label: string; enrollments: number; revenueCents: number }) => ({
+                          label: b.label,
+                          enrollments: b.enrollments,
+                          revenueDollars: b.revenueCents / 100,
+                        }))}
+                        margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fontSize: 12 }}
+                          className="fill-muted-foreground"
+                        />
+                        <YAxis
+                          yAxisId="left"
+                          allowDecimals={false}
+                          tick={{ fontSize: 12 }}
+                          className="fill-muted-foreground"
+                          label={{
+                            value: "Enrollments",
+                            angle: -90,
+                            position: "insideLeft",
+                            offset: 10,
+                            style: { fontSize: 11 },
+                          }}
+                        />
+                        <YAxis
+                          yAxisId="right"
+                          orientation="right"
+                          tickFormatter={(v: number) =>
+                            v.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })
+                          }
+                          tick={{ fontSize: 12 }}
+                          className="fill-muted-foreground"
+                          label={{
+                            value: "Revenue",
+                            angle: 90,
+                            position: "insideRight",
+                            offset: 10,
+                            style: { fontSize: 11 },
+                          }}
+                        />
+                        <Tooltip
+                          formatter={(value, name) => {
+                            if (name === "Revenue" && typeof value === "number") {
+                              return [
+                                value.toLocaleString("en-US", { style: "currency", currency: "USD" }),
+                                name,
+                              ];
+                            }
+                            return [value, name];
+                          }}
+                        />
+                        <Legend />
+                        <Bar
+                          yAxisId="left"
+                          dataKey="enrollments"
+                          name="Enrollments"
+                          fill="var(--chart-1)"
+                          radius={[3, 3, 0, 0]}
+                        />
+                        <Line
+                          yAxisId="right"
+                          type="monotone"
+                          dataKey="revenueDollars"
+                          name="Revenue"
+                          stroke="var(--chart-2)"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
         </TabsContent>

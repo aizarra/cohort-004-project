@@ -63,10 +63,10 @@ Install Recharts. Render a `ComposedChart` with a `Bar` series for enrollments (
 
 ### Acceptance criteria
 
-- [ ] Recharts is added as a dependency and the chart renders without errors.
-- [ ] Enrollment bars and revenue line appear on the same chart with their respective Y-axes.
-- [ ] Revenue is displayed in dollars on the Y-axis and in tooltips.
-- [ ] When `timeSeries` is empty, an empty-state message is displayed instead of the chart.
+- [x] Recharts is added as a dependency and the chart renders without errors.
+- [x] Enrollment bars and revenue line appear on the same chart with their respective Y-axes.
+- [x] Revenue is displayed in dollars on the Y-axis and in tooltips.
+- [x] When `timeSeries` is empty, an empty-state message is displayed instead of the chart.
 
 ---
 
