@@ -80,10 +80,10 @@ Add `lessonDropoff` to the API response. Fetch modules ordered by `modules.posit
 
 ### Acceptance criteria
 
-- [ ] Lessons are returned in module-position-first, then lesson-position order.
-- [ ] `completionRate` equals `completedCount / totalEnrolled * 100` (0 when no enrollments).
-- [ ] A lesson with no progress rows returns `completionRate: 0`.
-- [ ] Returns an empty array when the course has no lessons.
+- [x] Lessons are returned in module-position-first, then lesson-position order.
+- [x] `completionRate` equals `completedCount / totalEnrolled * 100` (0 when no enrollments).
+- [x] A lesson with no progress rows returns `completionRate: 0`.
+- [x] Returns an empty array when the course has no lessons.
 
 ---
 

@@ -571,4 +571,51 @@ The icon uses `fill="currentColor"` with `text-amber-500` when bookmarked, and `
 
 ---
 
+## Feature: Instructor Analytics Dashboard — Phase 4 (Drop-off API)
+
+### What we built
+
+The analytics API now populates **`lessonDropoff`** — previously a placeholder empty array — with real per-lesson completion rates ordered by full curriculum position.
+
+### Changed files
+
+- **`app/routes/api.course-analytics.$courseId.ts`** — replaced the `lessonDropoff: []` stub with two database queries and a JS merge step. Added `asc`, `inArray` to the drizzle-orm import, and `modules`, `lessons`, `lessonProgress` to the schema import.
+
+### Key concepts
+
+#### Curriculum order without a global position column
+
+Lessons don't have a single `position` number that spans the whole course — they have a position *within their module*, and modules have a position *within the course*. To produce the sequence a student actually experiences, you must sort on two levels:
+
+```ts
+.orderBy(asc(modules.position), asc(lessons.position))
+```
+
+A single JOIN between `lessons` and `modules` is enough to expose both columns; the ORDER BY clause does the rest. This is far cleaner than sorting in application code.
+
+#### One IN query beats N COUNT queries
+
+For each lesson we need a completion count. The naïve approach would fire one `SELECT count(*) FROM lesson_progress WHERE lesson_id = ?` per lesson — an N+1 query pattern. Instead we collect all lesson IDs first, then run a single aggregation query with `inArray`:
+
+```ts
+db.select({ lessonId: lessonProgress.lessonId, count: sql<number>`count(*)` })
+  .from(lessonProgress)
+  .where(and(inArray(lessonProgress.lessonId, lessonIds), eq(lessonProgress.status, "completed")))
+  .groupBy(lessonProgress.lessonId)
+  .all()
+```
+
+The result is a flat array of `{ lessonId, count }` pairs. We load it into a `Map<lessonId, count>` so the final merge loop runs in O(1) per lesson rather than O(lessons × results).
+
+#### The denominator is always `totalEnrolled`
+
+The PRD is deliberate about this: the completion rate for *every* lesson is divided by the *total enrolled* count, not by "students who reached that lesson". This means:
+
+- A 10% rate on lesson 1 → 90% of students never started.
+- A 10% rate on lesson 8 → most students dropped off somewhere along the way.
+
+Using a consistent denominator makes every bar in the funnel chart directly comparable, and it means the chart is *monotonically non-increasing* in expectation (each lesson can only have as many completions as earlier ones).
+
+---
+
 *This log will be updated as we add more features.*

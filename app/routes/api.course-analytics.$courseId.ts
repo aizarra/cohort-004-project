@@ -1,10 +1,10 @@
 import { data } from "react-router";
-import { and, isNotNull, sql, eq } from "drizzle-orm";
+import { and, isNotNull, sql, eq, asc, inArray } from "drizzle-orm";
 import type { Route } from "./+types/api.course-analytics.$courseId";
 import { getCurrentUserId } from "~/lib/session";
 import { getUserById } from "~/services/userService";
 import { getCourseById } from "~/services/courseService";
-import { UserRole, enrollments, purchases } from "~/db/schema";
+import { UserRole, enrollments, purchases, modules, lessons, lessonProgress } from "~/db/schema";
 import { db } from "~/db";
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -202,13 +202,61 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     });
   }
 
+  // --- Lesson drop-off ---
+  // Curriculum order is module.position first, then lesson.position within each
+  // module — exactly the sequence a student experiences. We derive this with a
+  // single JOIN rather than N+1 per-module queries.
+  const lessonsInOrder = db
+    .select({ lessonId: lessons.id, title: lessons.title })
+    .from(lessons)
+    .innerJoin(modules, eq(lessons.moduleId, modules.id))
+    .where(eq(modules.courseId, courseId))
+    .orderBy(asc(modules.position), asc(lessons.position))
+    .all();
+
+  // For each lesson we need the count of students who have a 'completed' row
+  // in lesson_progress. A second query with an IN clause is far cheaper than
+  // N separate COUNT queries — we fetch all relevant counts at once and merge
+  // them in JS with a Map for O(1) per-lesson lookup.
+  const lessonIds = lessonsInOrder.map((l) => l.lessonId);
+  const completedCountsRaw =
+    lessonIds.length > 0
+      ? db
+          .select({
+            lessonId: lessonProgress.lessonId,
+            count: sql<number>`count(*)`,
+          })
+          .from(lessonProgress)
+          .where(
+            and(
+              inArray(lessonProgress.lessonId, lessonIds),
+              eq(lessonProgress.status, "completed")
+            )
+          )
+          .groupBy(lessonProgress.lessonId)
+          .all()
+      : [];
+
+  const completedByLesson = new Map(
+    completedCountsRaw.map((r) => [r.lessonId, r.count])
+  );
+
+  const lessonDropoff = lessonsInOrder.map((l) => {
+    const completedCount = completedByLesson.get(l.lessonId) ?? 0;
+    return {
+      lessonId: l.lessonId,
+      title: l.title,
+      completionRate: totalEnrolled > 0 ? (completedCount / totalEnrolled) * 100 : 0,
+    };
+  });
+
   return {
     totalEnrolled,
     totalRevenueCents,
     completionRate,
     granularity,
     timeSeries,
-    lessonDropoff: [] as Array<{ lessonId: number; title: string; completionRate: number }>,
+    lessonDropoff,
     quizDistributions: [] as Array<{
       quizId: number;
       quizTitle: string;
