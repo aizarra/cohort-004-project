@@ -84,6 +84,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceLine,
 } from "recharts";
 import { data, isRouteErrorResponse } from "react-router";
 import { z } from "zod";
@@ -1784,6 +1785,93 @@ export default function InstructorCourseEditor({
                   )}
                 </CardContent>
               </Card>
+
+              {/* Quiz Score Distributions */}
+              {analyticsData.quizDistributions.length > 0 && (
+                <div className="space-y-4">
+                  <h2 className="text-base font-semibold">Quiz Score Distributions</h2>
+                  {analyticsData.quizDistributions.map((quiz: {
+                    quizId: number;
+                    quizTitle: string;
+                    lessonTitle: string;
+                    passingScore: number;
+                    buckets: [number, number, number, number, number];
+                    totalAttempted: number;
+                  }) => {
+                    const BUCKET_LABELS = ["0–20%", "20–40%", "40–60%", "60–80%", "80–100%"];
+                    const chartData = BUCKET_LABELS.map((range, i) => ({
+                      range,
+                      count: quiz.buckets[i],
+                    }));
+                    // The passing bucket is the first bucket whose range starts at or after the
+                    // passing threshold. For example, passingScore=0.6 → bucket index 3 ("60–80%"),
+                    // meaning every score in [0.6, 1.0] sits in this bucket or higher.
+                    const passingBucketLabel = BUCKET_LABELS[Math.min(Math.floor(quiz.passingScore / 0.2), 4)];
+
+                    return (
+                      <Card key={quiz.quizId}>
+                        <CardContent className="p-6">
+                          <h3 className="text-sm font-semibold">{quiz.quizTitle}</h3>
+                          <p className="mb-4 text-xs text-muted-foreground">{quiz.lessonTitle}</p>
+                          {quiz.totalAttempted === 0 ? (
+                            <div className="flex h-40 items-center justify-center">
+                              <p className="text-sm text-muted-foreground">No attempts yet</p>
+                            </div>
+                          ) : (
+                            <ResponsiveContainer width="100%" height={200}>
+                              <BarChart
+                                data={chartData}
+                                margin={{ top: 16, right: 16, left: 0, bottom: 4 }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                                <XAxis
+                                  dataKey="range"
+                                  tick={{ fontSize: 11 }}
+                                  className="fill-muted-foreground"
+                                />
+                                <YAxis
+                                  allowDecimals={false}
+                                  tick={{ fontSize: 12 }}
+                                  className="fill-muted-foreground"
+                                  label={{
+                                    value: "Students",
+                                    angle: -90,
+                                    position: "insideLeft",
+                                    offset: 10,
+                                    style: { fontSize: 11 },
+                                  }}
+                                />
+                                <Tooltip formatter={(v: number) => [v, "Students"]} />
+                                <Bar
+                                  dataKey="count"
+                                  name="Students"
+                                  fill="var(--chart-4)"
+                                  radius={[3, 3, 0, 0]}
+                                />
+                                <ReferenceLine
+                                  x={passingBucketLabel}
+                                  stroke="hsl(var(--destructive))"
+                                  strokeDasharray="4 4"
+                                  strokeWidth={2}
+                                  label={{
+                                    value: `Pass ≥${Math.round(quiz.passingScore * 100)}%`,
+                                    position: "top",
+                                    fontSize: 11,
+                                    fill: "hsl(var(--destructive))",
+                                  }}
+                                />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          )}
+                          <p className="mt-2 text-right text-xs text-muted-foreground">
+                            {quiz.totalAttempted} {quiz.totalAttempted === 1 ? "student" : "students"} attempted
+                          </p>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </TabsContent>

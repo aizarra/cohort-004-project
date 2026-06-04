@@ -132,8 +132,8 @@ For each entry in `quizDistributions`, render a `BarChart` histogram with five b
 
 ### Acceptance criteria
 
-- [ ] One histogram per quiz in curriculum order.
-- [ ] Each histogram has five bars labeled with their score range (e.g. "0–20%").
-- [ ] A vertical `ReferenceLine` marks the passing score on each histogram.
-- [ ] Quiz title and lesson title are displayed above each histogram.
-- [ ] When `quizDistributions` is empty, the section is absent from the DOM.
+- [x] One histogram per quiz in curriculum order.
+- [x] Each histogram has five bars labeled with their score range (e.g. "0–20%").
+- [x] A vertical `ReferenceLine` marks the passing score on each histogram.
+- [x] Quiz title and lesson title are displayed above each histogram.
+- [x] When `quizDistributions` is empty, the section is absent from the DOM.

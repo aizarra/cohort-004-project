@@ -4,6 +4,38 @@ This file documents every feature we build and every bug we fix, written in a wa
 
 ---
 
+## Feature: Instructor Analytics Dashboard — Phase 7 (Quiz Distributions UI)
+
+### What we built
+
+The Analytics tab now renders a **quiz score distribution histogram** for every quiz in the course, completing the analytics feature. Each histogram shows the five fixed score buckets (0–20%, 20–40%, 40–60%, 60–80%, 80–100%) as bars, with a vertical `ReferenceLine` marking the passing threshold. When a course has no quizzes, the entire section is absent from the DOM.
+
+### Why histograms need a different chart than the drop-off funnel
+
+The drop-off funnel had a natural numeric Y-axis (0–100% completion). Quiz distributions, by contrast, show *counts* of students on the Y-axis and *score ranges* on the X-axis — a classic histogram shape. We use Recharts' `BarChart` with a categorical `XAxis` (one bar per bucket label) instead of `ComposedChart`.
+
+### The ReferenceLine and the "bucket snapping" problem
+
+The passing threshold (`passingScore`) is a continuous value between 0 and 1, but our X-axis has only five categorical positions. Recharts' `ReferenceLine` with `x` on a categorical axis must snap to one of those category labels — it cannot float between bars.
+
+We resolve this by computing the **first bucket whose range starts at or above the passing threshold**:
+
+```ts
+const passingBucketLabel = BUCKET_LABELS[Math.min(Math.floor(quiz.passingScore / 0.2), 4)];
+```
+
+For `passingScore = 0.6`:
+- `Math.floor(0.6 / 0.2) = 3` → `"60–80%"`
+
+That bucket and every bar to its right represent passing scores. The ReferenceLine lands on that bucket's bar with a label like `Pass ≥60%`, giving the instructor an instant visual split between failing and passing score ranges.
+
+### Empty states
+
+- If `quiz.totalAttempted === 0`: renders a "No attempts yet" message inside the card (same height as a chart, so the layout stays stable).
+- If `quizDistributions.length === 0` (no quizzes in the course): the entire section — including the heading — is not rendered at all.
+
+---
+
 ## Feature: Instructor Analytics Dashboard — Phase 6 (Quiz Distributions API)
 
 ### What we built
