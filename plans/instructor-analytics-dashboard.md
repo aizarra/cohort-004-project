@@ -45,11 +45,11 @@ Add `granularity` and `timeSeries` to the API response. Determine granularity by
 
 ### Acceptance criteria
 
-- [ ] A course with all activity within 90 days returns `granularity: "weekly"`.
-- [ ] A course with older activity returns `granularity: "monthly"`.
-- [ ] A course with no activity returns `granularity: "monthly"` and `timeSeries: []`.
-- [ ] Each bucket label is human-readable (e.g. "Jan 2025" or "Week of Mar 3").
-- [ ] `revenueCents` per bucket is the sum of `pricePaid` for purchases in that window.
+- [x] A course with all activity within 90 days returns `granularity: "weekly"`.
+- [x] A course with older activity returns `granularity: "monthly"`.
+- [x] A course with no activity returns `granularity: "monthly"` and `timeSeries: []`.
+- [x] Each bucket label is human-readable (e.g. "Jan 2025" or "Week of Mar 3").
+- [x] `revenueCents` per bucket is the sum of `pricePaid` for purchases in that window.
 
 ---
 

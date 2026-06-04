@@ -67,6 +67,56 @@ This separation of concerns prevents floating-point errors in monetary arithmeti
 
 ---
 
+## Feature: Instructor Analytics Dashboard — Phase 2 (Time Series API)
+
+### What we built
+
+The `api.course-analytics.$courseId` route now populates `granularity` and `timeSeries` with real data. Given a course ID, the API determines whether to bucket activity by week or by month, then returns an ordered array of `{ label, enrollments, revenueCents }` objects that a chart can render directly.
+
+### Changed files
+
+- **`app/routes/api.course-analytics.$courseId.ts`** — added helper functions (`getWeekStart`, `weekKey`, `monthKey`, `weekLabel`, `monthLabel`, `buildTimeSeries`) and replaced the hardcoded `granularity: "monthly", timeSeries: []` stub with real computation.
+
+### Key concepts
+
+#### Determining granularity: a single threshold check
+
+The decision between weekly and monthly detail comes down to one question: *how old is the oldest activity for this course?* We query `MIN(enrolled_at)` and `MIN(created_at)` from the two relevant tables, take the earlier of the two, and compare it to today:
+
+```ts
+const granularity: "weekly" | "monthly" =
+  earliestTs && Date.now() - new Date(earliestTs).getTime() <= NINETY_DAYS_MS
+    ? "weekly"
+    : "monthly";
+```
+
+If the course has no activity at all, `earliestTs` is `null`, the condition short-circuits to `false`, and we default to `"monthly"` with an empty `timeSeries` array — exactly what the PRD specifies.
+
+#### Generating every bucket, even empty ones
+
+A naive approach would group only the rows that actually exist in the database, skipping periods with zero activity. That produces a chart where bars jump from one non-adjacent date to the next, making it look like a promotion that ran for three weeks was actually a single event. Instead, `buildTimeSeries` enumerates *every* bucket between the earliest timestamp and today, initialises each to zero, then fills in the real counts:
+
+```ts
+// weekly: advance by exactly 7 days
+let cursor = getWeekStart(earliest);
+while (cursor <= getWeekStart(now)) {
+  orderedKeys.push(cursor.toISOString().slice(0, 10));
+  cursor = new Date(cursor.getTime() + 7 * 24 * 60 * 60 * 1000);
+}
+```
+
+This means the chart always shows a continuous timeline, with authentic zeros for quiet periods.
+
+#### Sunday-based weeks and UTC discipline
+
+All date arithmetic uses UTC methods (`getUTCFullYear`, `getUTCDay`, etc.) to avoid surprises from daylight-saving time transitions. Weeks start on Sunday — `getWeekStart` backs up to the preceding Sunday by subtracting `getUTCDay()` days — so "Week of Mar 3" always means the same calendar week regardless of where the server is hosted.
+
+#### Bucket keys as internal identifiers
+
+Each time bucket is identified by an opaque string key (`"2025-03-03"` for a weekly bucket, `"2025-03"` for monthly). These keys are never sent to the client; the UI receives only the human-readable `label`. Using a key that is also a valid date string has a side benefit: lexicographic sort order equals chronological order, which is why `candidates.sort()[0]` correctly picks the earlier of two ISO timestamps.
+
+---
+
 ## Feature: Course Rating
 
 **Commit:** `ee34581 adds rating feature`
