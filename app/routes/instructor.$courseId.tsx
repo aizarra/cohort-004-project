@@ -1771,8 +1771,8 @@ export default function InstructorCourseEditor({
                           }}
                         />
                         <Tooltip
-                          formatter={(value: number) => [`${value.toFixed(1)}%`, "Completion rate"]}
-                          labelFormatter={(label: string) => label}
+                          formatter={(value) => [`${typeof value === "number" ? value.toFixed(1) : value}%`, "Completion rate"]}
+                          labelFormatter={(label) => String(label)}
                         />
                         <Bar
                           dataKey="completionRate"
@@ -1841,7 +1841,7 @@ export default function InstructorCourseEditor({
                                     style: { fontSize: 11 },
                                   }}
                                 />
-                                <Tooltip formatter={(v: number) => [v, "Students"]} />
+                                <Tooltip formatter={(v) => [v ?? 0, "Students"]} />
                                 <Bar
                                   dataKey="count"
                                   name="Students"

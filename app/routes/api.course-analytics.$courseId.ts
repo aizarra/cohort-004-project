@@ -4,7 +4,7 @@ import type { Route } from "./+types/api.course-analytics.$courseId";
 import { getCurrentUserId } from "~/lib/session";
 import { getUserById } from "~/services/userService";
 import { getCourseById } from "~/services/courseService";
-import { UserRole, enrollments, purchases, modules, lessons, lessonProgress, quizzes, quizAttempts } from "~/db/schema";
+import { UserRole, LessonProgressStatus, enrollments, purchases, modules, lessons, lessonProgress, quizzes, quizAttempts } from "~/db/schema";
 import { db } from "~/db";
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -243,7 +243,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
           .where(
             and(
               inArray(lessonProgress.lessonId, lessonIds),
-              eq(lessonProgress.status, "completed")
+              eq(lessonProgress.status, LessonProgressStatus.Completed)
             )
           )
           .groupBy(lessonProgress.lessonId)

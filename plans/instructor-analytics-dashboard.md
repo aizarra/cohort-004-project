@@ -24,14 +24,14 @@ The thinnest end-to-end slice that touches every layer: add the Analytics tab to
 
 ### Acceptance criteria
 
-- [ ] Analytics tab appears in the course editor alongside existing tabs.
-- [ ] Clicking it for the first time triggers exactly one GET request to `api.course-analytics.$courseId`.
-- [ ] Switching away and back does not re-fetch.
-- [ ] Unauthenticated requests return 401; non-owner requests return 403; missing course returns 404.
-- [ ] Skeleton placeholders are shown while the fetcher is in flight.
-- [ ] Three summary cards render with real data: total enrolled students, gross revenue in dollars, completion rate.
-- [ ] Gross revenue shows $0.00 when there are no purchases.
-- [ ] When `totalEnrolled === 0`, an empty-state message is shown in place of the chart sections.
+- [x] Analytics tab appears in the course editor alongside existing tabs.
+- [x] Clicking it for the first time triggers exactly one GET request to `api.course-analytics.$courseId`.
+- [x] Switching away and back does not re-fetch.
+- [x] Unauthenticated requests return 401; non-owner requests return 403; missing course returns 404.
+- [x] Skeleton placeholders are shown while the fetcher is in flight.
+- [x] Three summary cards render with real data: total enrolled students, gross revenue in dollars, completion rate.
+- [x] Gross revenue shows $0.00 when there are no purchases.
+- [x] When `totalEnrolled === 0`, an empty-state message is shown in place of the chart sections.
 
 ---
 
@@ -114,11 +114,11 @@ Add `quizDistributions` to the API response. For each quiz (ordered by its lesso
 
 ### Acceptance criteria
 
-- [ ] Quizzes appear in curriculum order.
-- [ ] `buckets` has exactly 5 integers summing to `totalAttempted`.
-- [ ] A score of exactly 1.0 falls in the last bucket.
-- [ ] Only each student's best attempt is counted.
-- [ ] Returns `[]` when the course has no quizzes.
+- [x] Quizzes appear in curriculum order.
+- [x] `buckets` has exactly 5 integers summing to `totalAttempted`.
+- [x] A score of exactly 1.0 falls in the last bucket.
+- [x] Only each student's best attempt is counted.
+- [x] Returns `[]` when the course has no quizzes.
 
 ---
 

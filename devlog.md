@@ -4,6 +4,97 @@ This file documents every feature we build and every bug we fix, written in a wa
 
 ---
 
+## Note to Self: Testing Strategy — Research Needed
+
+The project already has a solid testing foundation (`app/test/setup.ts`, `seedBaseData()`, and 278 passing tests across the service layer) but the analytics feature was shipped without any tests of its own.
+
+Good candidates that were missed:
+
+- `getBucketIndex(score)` — boundary case: a score of exactly `1.0` must land in bucket 4, not overflow to 5
+- `buildTimeSeries(...)` — does it fill empty buckets between sparse dates? does the 90-day granularity threshold switch correctly?
+- Drop-off `completionRate` — does it divide by `totalEnrolled` (all students) rather than "students who reached that lesson"?
+
+**TODO:** Research how to write integration-style tests for React Router v7 route loaders (the `loader` function in `api.course-analytics.$courseId.ts`). The service-layer pattern in this repo uses `vi.mock("~/db")` to inject a test database — the same approach should work for route loaders, but verify it. Look into whether React Router exposes any test utilities for loaders specifically.
+
+---
+
+## Bug Fix: TypeScript Errors Caught by `pnpm typecheck`
+
+### What we fixed
+
+Running `pnpm typecheck` after the analytics feature was complete revealed four type errors — none of them broke the app at runtime, but each one pointed to a real gap in how the code used its types.
+
+### Error 1: Raw string passed to a Drizzle enum column
+
+In `api.course-analytics.$courseId.ts`, the query filtering for completed lessons used a bare string literal:
+
+```ts
+eq(lessonProgress.status, "completed")
+```
+
+The `status` column is typed as `LessonProgressStatus` (a TypeScript enum), so Drizzle's `eq()` function rightfully rejected the raw string. The fix is to import and use the enum value:
+
+```ts
+eq(lessonProgress.status, LessonProgressStatus.Completed)
+```
+
+This is the type system doing exactly its job. If the enum value were ever renamed or restructured, the compiler would surface every callsite that needs updating — rather than letting a stale string silently return zero rows at runtime.
+
+### Errors 2–4: Recharts tooltip callback signatures
+
+Three `Tooltip` `formatter` and `labelFormatter` callbacks were annotated with overly narrow parameter types (`number`, `string`). Recharts' actual callback signatures are more permissive:
+
+- `formatter` receives `ValueType | undefined` (because a data point may be missing)
+- `labelFormatter` receives `ReactNode` (because axis tick labels can be any renderable value)
+
+The fixes narrowed at the usage site rather than widening the declaration:
+
+```ts
+// formatter: guard before calling .toFixed()
+(value) => [`${typeof value === "number" ? value.toFixed(1) : value}%`, "Completion rate"]
+
+// labelFormatter: convert whatever ReactNode we get to a string
+(label) => String(label)
+
+// simple count formatter: fall back to 0 if value is undefined
+(v) => [v ?? 0, "Students"]
+```
+
+### The broader lesson
+
+Type errors in callback parameters like these are easy to miss during development because TypeScript only checks them when the function is actually invoked through a typed interface — not when you first write the arrow function. Running `tsc` as a final gate, separate from the dev server's incremental compilation, is the reliable way to catch them.
+
+---
+
+## Feature: Instructor Analytics Dashboard — Complete (Phases 1–7)
+
+### What we accomplished
+
+The Instructor Analytics Dashboard is now fully implemented. Instructors can navigate to any of their courses, click the **Analytics** tab, and immediately see a rich, data-driven picture of how their course is performing — without leaving the editor they already use for content.
+
+The feature delivered four distinct sections:
+
+1. **Summary cards** — Total enrolled students, gross revenue (in dollars, converted from stored cents), and overall completion rate. Even a brand-new course with zero purchases shows `$0.00` rather than a missing value.
+2. **Enrollments & Revenue Over Time** — A Recharts `ComposedChart` with enrollment bars on the left Y-axis and a revenue line on the right, sharing one time-bucket X-axis. Granularity is adaptive: weekly buckets when the course's earliest activity is within 90 days, monthly otherwise.
+3. **Lesson Drop-off Funnel** — A bar chart where each bar represents one lesson in strict curriculum order (module position first, then lesson position within each module). The height encodes what percentage of *all enrolled students* completed that lesson — using total enrollment as the denominator rather than "students who reached that lesson", which makes the scale consistent and immediately comparable across lessons.
+4. **Quiz Score Distributions** — One histogram per quiz, bucketed into five fixed ranges (0–20%, 20–40%, 40–60%, 60–80%, 80–100%), with a `ReferenceLine` snapped to the passing threshold. Only each student's best attempt is counted, so repeat test-takers don't skew the distribution toward low scores.
+
+### Architecture decisions worth remembering
+
+**Lazy loading with `useFetcher`.** Analytics data is *not* fetched in the course editor's main loader. A `useFetcher` fires only when the instructor first clicks the Analytics tab, controlled by a `hasLoadedAnalytics` boolean flag. Subsequent tab switches reuse the cached data. This keeps the editor fast when the instructor just wants to edit content, at the cost of stale data within a single page visit — an explicit, acceptable trade-off.
+
+**Revenue stays in cents until the UI.** The API always returns `totalRevenueCents` and `revenueCents` per time bucket as integers (cents). The UI divides by 100 and formats as dollars. This single-source-of-truth approach eliminates floating-point rounding errors that would arise from storing or computing in dollars.
+
+**Curriculum order is a JOIN, not N+1.** Both the drop-off funnel and quiz distributions need lessons in `(module.position, lesson.position)` order. Rather than querying each module separately, we do one `JOIN` across `lessons` and `modules` with an `ORDER BY modules.position, lessons.position` clause — one round trip to the database regardless of how many modules the course has.
+
+**Bucket snapping for the ReferenceLine.** The passing score is a continuous value (e.g., `0.6`), but a Recharts categorical X-axis only accepts one of the five bucket labels as a `ReferenceLine` anchor. We snap it with `Math.floor(passingScore / 0.2)`, clamped to `[0, 4]`. This correctly places the line at the *first bucket that can contain a passing score*.
+
+### No schema changes required
+
+All the data needed — `enrollments`, `purchases`, `lessonProgress`, `quizAttempts`, `modules`, `lessons`, `quizzes` — was already in the database. This feature was purely additive: a new API route and new UI inside an existing tab shell.
+
+---
+
 ## Feature: Instructor Analytics Dashboard — Phase 7 (Quiz Distributions UI)
 
 ### What we built
@@ -615,7 +706,7 @@ Note: all these functions take two integer parameters of the same type, so they 
 
 A key design decision: both the lesson page loader and the course detail loader call `getBookmarkedLessonIds` during the server request and pass the full list of bookmarked IDs down to the UI as a `number[]`.
 
-This means the bookmark indicators in the sidebar and course detail are **server-rendered** — no extra network requests, no flicker, no loading states. The only time the network is involved is when the user clicks the toggle button.
+This means the bookmark indicators in the sidebar and course detail are **server-rendered** — no extra network requests, no flicker, no loading states. They only time the network is involved is when the user clicks the toggle button.
 
 The component receives the array and converts it to a `Set<number>` at the call site (`new Set(bookmarkedLessonIds)`), so lookups in the render loop are O(1) instead of O(n).
 
